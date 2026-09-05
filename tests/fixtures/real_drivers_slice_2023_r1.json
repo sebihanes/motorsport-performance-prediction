@@ -1,0 +1,22 @@
+[
+  {
+    "season": 2023,
+    "round": 1,
+    "driver_id": "leclerc",
+    "driver_code": "LEC",
+    "permanent_number": "16",
+    "given_name": "Charles",
+    "family_name": "Leclerc",
+    "nationality": "Monegasque"
+  },
+  {
+    "season": 2023,
+    "round": 1,
+    "driver_id": "max_verstappen",
+    "driver_code": "VER",
+    "permanent_number": "3",
+    "given_name": "Max",
+    "family_name": "Verstappen",
+    "nationality": "Dutch"
+  }
+]

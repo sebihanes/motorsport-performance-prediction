@@ -1,0 +1,20 @@
+[
+  {
+    "season": 2023,
+    "round": 1,
+    "driver_id": "leclerc",
+    "lap": 13,
+    "stop_number": 1,
+    "time_of_day": "18:25:06",
+    "duration_raw": "24.345"
+  },
+  {
+    "season": 2023,
+    "round": 1,
+    "driver_id": "max_verstappen",
+    "lap": 14,
+    "stop_number": 1,
+    "time_of_day": "18:26:35",
+    "duration_raw": "24.289"
+  }
+]

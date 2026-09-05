@@ -1,0 +1,26 @@
+# Motorsport Performance Prediction - pipeline configuration.
+# Changing scope (season/rounds) is a config edit, not a code change (docs/ARCHITECTURE_REPORT.md SS4).
+
+[scope]
+season = 2023
+rounds = [1, 2, 3, 4, 5, 6]
+session = "R"  # Race only for Phase 2 - see docs/01_data_sources.md
+
+[paths]
+raw_dir = "data/raw"
+intermediate_dir = "data/intermediate"
+processed_dir = "data/processed"
+features_dir = "data/features"
+model_ready_dir = "data/model_ready"
+quality_dir = "data/quality"
+
+[validation]
+# Plausible bounds for a green-flag F1 race lap. Outside this range a lap is
+# flagged, never silently dropped, in the validation report.
+lap_time_min_s = 55.0
+lap_time_max_s = 160.0
+valid_compounds = ["SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET", "UNKNOWN"]
+
+[cleaning]
+# Rounds are treated as an isolated batch. Duplicate detection key.
+duplicate_key = ["season", "round", "driver", "lap_number"]

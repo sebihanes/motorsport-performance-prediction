@@ -1,0 +1,10 @@
+season,round,Driver,DriverNumber,Team,LapNumber,Stint,LapTime,Time,Compound,TyreLife,FreshTyre,PitInTime,PitOutTime,Sector1Time,Sector2Time,Sector3Time,TrackStatus,Deleted,DeletedReason,IsAccurate
+2023,1,VER,1,Red Bull Racing,1.0,1.0,0 days 00:01:39.019000,0 days 01:04:15.902000,SOFT,4.0,False,,,,0 days 00:00:42.414000,0 days 00:00:23.842000,12,,,False
+2023,1,VER,1,Red Bull Racing,2.0,1.0,0 days 00:01:37.974000,0 days 01:05:53.876000,SOFT,5.0,False,,,0 days 00:00:31.342000,0 days 00:00:42.504000,0 days 00:00:24.128000,12,,,True
+2023,1,VER,1,Red Bull Racing,3.0,1.0,0 days 00:01:38.006000,0 days 01:07:31.882000,SOFT,6.0,False,,,0 days 00:00:31.388000,0 days 00:00:42.469000,0 days 00:00:24.149000,1,,,True
+2023,1,VER,1,Red Bull Racing,4.0,1.0,0 days 00:01:37.976000,0 days 01:09:09.858000,SOFT,7.0,False,,,0 days 00:00:31.271000,0 days 00:00:42.642000,0 days 00:00:24.063000,1,,,True
+2023,1,VER,1,Red Bull Racing,5.0,1.0,0 days 00:01:38.035000,0 days 01:10:47.893000,SOFT,8.0,False,,,0 days 00:00:31.244000,0 days 00:00:42.724000,0 days 00:00:24.067000,1,,,True
+2023,1,VER,1,Red Bull Racing,6.0,1.0,0 days 00:01:37.986000,0 days 01:12:25.879000,SOFT,9.0,False,,,0 days 00:00:31.341000,0 days 00:00:42.632000,0 days 00:00:24.013000,1,,,True
+2023,1,LEC,16,Ferrari,1.0,1.0,0 days 00:01:40.230000,0 days 01:04:17.113000,SOFT,1.0,True,,,,0 days 00:00:42.549000,0 days 00:00:24.122000,12,,,False
+2023,1,LEC,16,Ferrari,2.0,1.0,0 days 00:01:38.750000,0 days 01:05:55.863000,SOFT,2.0,True,,,0 days 00:00:31.407000,0 days 00:00:43.127000,0 days 00:00:24.216000,21,,,True
+2023,1,LEC,16,Ferrari,3.0,1.0,0 days 00:01:38.658000,0 days 01:07:34.521000,SOFT,3.0,True,,,0 days 00:00:31.238000,0 days 00:00:43.103000,0 days 00:00:24.317000,1,,,True
