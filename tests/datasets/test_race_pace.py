@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from mpp.datasets.race_pace import build_race_pace_dataset
+from mpp.datasets.race_pace import FEATURE_COLUMNS, TARGET_COLUMN, build_race_pace_dataset
 
 
 def _lap(driver, lap_number, lap_time_s, rainfall=False, is_valid=True):
@@ -18,6 +18,9 @@ def _lap(driver, lap_number, lap_time_s, rainfall=False, is_valid=True):
         "track_temp": 40.0,
         "rainfall": rainfall,
         "driver_prior_relative_pace_s": -0.5,
+        "driver_prior_relative_pace_std_s": 0.3,
+        "team_prior_relative_pace_s": -0.4,
+        "driver_circuit_prior_relative_pace_s": None,
         "is_valid_lap": is_valid,
     }
 
@@ -67,3 +70,10 @@ def test_one_row_per_driver_session():
     dataset = build_race_pace_dataset(laps)
     assert len(dataset) == 2
     assert set(dataset["driver"]) == {"VER", "LEC"}
+
+
+def test_output_columns_match_definition():
+    laps = pd.DataFrame([_lap("VER", 1, 99.0)])
+    dataset = build_race_pace_dataset(laps)
+    expected = {"season", "round", "circuit_id", "driver", "team", TARGET_COLUMN, *FEATURE_COLUMNS}
+    assert set(dataset.columns) == expected

@@ -15,10 +15,15 @@ def _lap(driver, stint, lap_number, tyre_age, lap_time_s, compound="SOFT", is_va
         "stint": stint,
         "lap_number": lap_number,
         "tyre_age": tyre_age,
+        "laps_into_stint": lap_number,  # single-stint fixtures: stint starts at lap 1
         "compound": compound,
         "race_fraction": lap_number / 57,
         "air_temp": 29.0,
         "track_temp": 40.0,
+        "driver_prior_relative_pace_s": None,
+        "driver_prior_relative_pace_std_s": None,
+        "team_prior_relative_pace_s": None,
+        "driver_circuit_prior_relative_pace_s": None,
         "lap_time_s": lap_time_s,
         "is_valid_lap": is_valid,
     }
@@ -75,3 +80,22 @@ def test_invalid_laps_never_reach_the_dataset():
     )
     dataset, summary = build_tyre_degradation_dataset(laps)
     assert len(dataset) == 3  # the invalid lap is dropped, not imputed
+
+
+def test_output_contains_new_performance_features():
+    laps = pd.DataFrame(
+        [
+            _lap("VER", 1, 1, 4, 99.0),
+            _lap("VER", 1, 2, 5, 98.0),
+            _lap("VER", 1, 3, 6, 97.5),
+        ]
+    )
+    dataset, _ = build_tyre_degradation_dataset(laps)
+    for column in (
+        "laps_into_stint",
+        "driver_prior_relative_pace_s",
+        "driver_prior_relative_pace_std_s",
+        "team_prior_relative_pace_s",
+        "driver_circuit_prior_relative_pace_s",
+    ):
+        assert column in dataset.columns

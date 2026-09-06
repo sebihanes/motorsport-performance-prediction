@@ -7,9 +7,12 @@ view of another problem's residuals, not an independently labeled target - it
 belongs in Phase 4+ model evaluation, not in the data pipeline.
 
 All four live under `data/model_ready/` as Parquet, and all share the same
-group columns (`season`, `round`, `circuit_id`) so a future `GroupKFold` /
-`GroupShuffleSplit` (architecture report SS8) can hold out whole races or
-circuits consistently across problems.
+group columns (`season`, `round`, `circuit_id`) so `mpp.splits.group_split`
+(SS8, `docs/05_split_strategy.md`) can hold out whole races or circuits
+consistently across problems. Column-by-column definitions (type, unit,
+source, availability timing, prediction-safety, limitations) are in
+`docs/04_feature_dictionary.md`; this document is the per-dataset schema
+summary.
 
 ## `lap_time.parquet` (`mpp.datasets.lap_time`)
 
@@ -19,7 +22,7 @@ One row per clean racing lap (`is_valid_lap == True`).
 |---|---|
 | `season`, `round`, `circuit_id` | grouping key |
 | `driver`, `team` | identity |
-| `lap_number`, `race_fraction`, `stint`, `tyre_age`, `tyre_age_sq`, `compound`, `air_temp`, `track_temp`, `rainfall`, `driver_prior_relative_pace_s` | features |
+| `lap_number`, `race_fraction`, `stint`, `tyre_age`, `tyre_age_sq`, `laps_into_stint`, `air_temp`, `track_temp`, `rainfall`, `driver_prior_relative_pace_s`, `driver_prior_relative_pace_std_s`, `team_prior_relative_pace_s`, `driver_circuit_prior_relative_pace_s`, `stint_prior_mean_lap_time_s`, `tyre_age_x_soft`, `tyre_age_x_medium`, `tyre_age_x_hard`, `tyre_age_x_intermediate`, `tyre_age_x_wet` (numeric); `compound`, `session_type` (nominal, one-hot encoded via `mpp.features.encoding`) | features |
 | `lap_time_s` | **target** - lap time in seconds |
 
 ## `tyre_degradation.parquet` (`mpp.datasets.tyre_degradation`)
@@ -34,7 +37,7 @@ absolute pace differences.
 |---|---|
 | `season`, `round`, `circuit_id` | grouping key |
 | `driver`, `team` | identity |
-| `tyre_age_delta`, `tyre_age_delta_sq`, `compound`, `race_fraction`, `air_temp`, `track_temp` | features |
+| `tyre_age_delta`, `tyre_age_delta_sq`, `laps_into_stint`, `race_fraction`, `air_temp`, `track_temp`, `driver_prior_relative_pace_s`, `driver_prior_relative_pace_std_s`, `team_prior_relative_pace_s`, `driver_circuit_prior_relative_pace_s` (numeric); `compound` (nominal) | features |
 | `lap_time_delta_s` | **target** - lap time minus the stint's baseline lap time (0.0 at the baseline lap itself, by construction) |
 
 **Known limitation**: this delta conflates tyre wear with fuel burn within
@@ -58,7 +61,7 @@ laps (traffic, minor incidents) should not distort the pace estimate.
 |---|---|
 | `season`, `round`, `circuit_id` | grouping key |
 | `driver`, `team` | identity |
-| `driver_prior_relative_pace_s`, `air_temp_mean`, `track_temp_mean`, `rainfall_any` | features |
+| `driver_prior_relative_pace_s`, `driver_prior_relative_pace_std_s`, `team_prior_relative_pace_s`, `driver_circuit_prior_relative_pace_s`, `air_temp_mean`, `track_temp_mean`, `rainfall_any` | features |
 | `session_pace_s` | **target** - median lap time (s) among that driver's clean laps |
 
 **Known limitation**: round 1 has no prior-round history for any driver, so

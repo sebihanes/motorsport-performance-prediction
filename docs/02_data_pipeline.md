@@ -86,7 +86,9 @@ counts, which will change if the scope is widened to noisier rounds/seasons.
 ## 4. Feature dataset (`mpp.features`) - processed -> one wide table
 
 `run_feature_build()` produces `data/features/laps_features.parquet`, one row
-per lap, adding:
+per lap. Full column-by-column definitions (type, unit, source, availability
+timing, prediction-safety, limitations) are in
+`docs/04_feature_dictionary.md`; in brief, `mpp.features.build` adds:
 
 - **Weather** (`mpp.features.weather`): nearest-time join to the weather
   samples, done per `(season, round)` group so a lap in one race is never
@@ -95,12 +97,28 @@ per lap, adding:
 - **Race context** (`mpp.features.context`): `race_fraction = lap_number / total_laps`,
   a fuel-load proxy that is safe to use (total race distance is known in
   advance, not an outcome).
-- **Tyre** (`mpp.features.tyre`): `tyre_age_sq`, for the non-linear shape of
-  degradation.
-- **Historical driver pace** (`mpp.features.historical`): see
-  "Leakage prevention" below - the one feature in this pipeline that requires
-  careful ordering to avoid contaminating a prediction with future
-  information.
+- **Lap context** (`mpp.features.lap`): `laps_into_stint`, deliberately
+  independent of `tyre_age` (which can start above 1 due to pre-race laps -
+  see `docs/01_data_sources.md`).
+- **Session** (`mpp.features.session`): `session_type`, constant today
+  (Race-only ingestion) but wired through as a real column.
+- **Tyre** (`mpp.features.tyre`): `tyre_age_sq` for the non-linear shape of
+  degradation, plus `tyre_age_x_<compound>` interaction columns (a real
+  race-engineering interaction - softer compounds degrade faster - not an
+  arbitrary cross term).
+- **Historical driver/team/circuit pace and driver consistency**
+  (`mpp.features.historical`, `.team`, `.circuit`): see "Leakage prevention"
+  below - the features in this pipeline that require careful ordering to
+  avoid contaminating a prediction with future information.
+- **Within-stint performance trend** (`mpp.features.performance`):
+  `stint_prior_mean_lap_time_s`, an expanding mean of the *same stint's own
+  prior* clean laps only - see `docs/04_feature_dictionary.md` for why a
+  full-stint (including future laps) version was rejected as leakage.
+
+Categorical columns (`compound`, `session_type`, and any others a future
+phase adds) are one-hot encoded via `mpp.features.encoding.build_feature_pipeline`
+- never given an arbitrary ordinal integer, which would imply a false
+distance between categories a linear model would wrongly learn from.
 
 ## 5. Model datasets (`mpp.datasets`) - one table per prediction problem
 
@@ -110,25 +128,47 @@ with a build summary at `data/quality/dataset_build_summary.json`.
 
 ## Leakage prevention in this phase
 
-- **`driver_prior_relative_pace_s`** (`mpp.features.historical`) is an
-  expanding mean computed *after* sorting by round and shifting by one - a
-  round's value only ever reflects strictly earlier rounds. Round 1 is `NaN`
-  for every driver by construction (no history exists yet). This is unit
-  tested directly: `tests/features/test_historical.py::test_future_round_never_leaks_into_an_earlier_rounds_feature`
-  perturbs a later round's lap times and asserts every earlier round's feature
-  value is bit-for-bit unchanged.
+- **`driver_prior_relative_pace_s`/`_std_s`, `team_prior_relative_pace_s`,
+  `driver_circuit_prior_relative_pace_s`** (`mpp.features.historical`/`.team`/`.circuit`,
+  sharing the leakage-safe `add_expanding_prior_stat` helper in
+  `mpp.features.common`) are expanding statistics computed *after* sorting by
+  round and shifting by one - a round's value only ever reflects strictly
+  earlier rounds. Round 1 is `NaN` for every driver/team by construction (no
+  history exists yet). Unit tested directly per feature
+  (`tests/features/test_historical.py`, `test_team.py`, `test_circuit.py`,
+  each with a `..._never_leaks_into_an_earlier_round...` test that perturbs a
+  later round and asserts every earlier round's value is bit-for-bit
+  unchanged), and again end-to-end across all of them together in
+  `tests/test_leakage_review.py`.
+- **`stint_prior_mean_lap_time_s`** (`mpp.features.performance`) is an
+  expanding mean over a lap's *own stint's prior laps only* - shift-then-expand
+  within the stint, the same pattern as the round-level features above but at
+  lap grain. `tests/features/test_performance.py` and
+  `tests/test_leakage_review.py` both verify a later lap in the same stint
+  never changes an earlier lap's value.
+- **`laps_into_stint`** (`mpp.features.lap`) looks like it could leak (it's a
+  `groupby(...).transform("min")` over the whole stint), but is not: the
+  minimum lap number of a stint is fixed and known the instant the stint
+  begins, so every lap in it already "knows" that value in real time - unlike
+  a `transform("max")` over the stint (the *last* lap), which is not known
+  until the stint ends and is deliberately never computed as a per-row
+  feature anywhere in this pipeline.
 - **Circuit identity** (`circuit_id`) is known before the session runs, so it
-  carries no leakage as a feature; it is also the natural `GroupKFold` /
-  `GroupShuffleSplit` key for Phase 3 model validation (not yet implemented).
+  carries no leakage as a feature; it is also the grouping key for
+  `mpp.splits.group_split`'s circuit-grouped split (`docs/05_split_strategy.md`).
 - **Weather and race-context features** use only information available at (or
   before) the lap being predicted - no post-lap or post-race aggregate is
   ever joined onto a lap's own row.
 - Feature engineering deliberately does **not** include finishing position,
-  championship points, or any other race-outcome field.
+  championship points, or any other race-outcome field, nor a same-session
+  relative-pace feature (comparing a lap to other drivers' pace in the very
+  race being predicted) - see `docs/04_feature_dictionary.md`
+  "Deliberately not built" for the full reasoning.
 
-## What Phase 2 does not do
+## What this phase does not do
 
 Model training, cross-validation, hyperparameter tuning, and evaluation are
-Phase 3+ (`docs/ARCHITECTURE_REPORT.md` SS17). This phase's job is to produce
-correct, leakage-safe, well-documented model-ready tables - nothing here fits
-a model or reports an accuracy number.
+Phase 4+ (`docs/ARCHITECTURE_REPORT.md` SS17). Phases 2-3's job is to produce
+correct, leakage-safe, well-documented model-ready tables with a matched
+split strategy already implemented - nothing here fits a model or reports an
+accuracy number.

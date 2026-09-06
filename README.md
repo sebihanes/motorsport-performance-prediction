@@ -12,12 +12,18 @@ RAW DATA → DATA VALIDATION → DATA CLEANING → FEATURE ENGINEERING
 → ENGINEERING INTERPRETATION
 ```
 
-**Status: Phase 2 complete — the data pipeline (raw data through model-ready
-datasets) is implemented and tested.** See
+**Status: Phase 3 complete — data pipeline plus a reusable, leakage-reviewed
+feature engineering layer (driver/team/circuit/tyre/session/lap/performance
+features, categorical encoding, and a split strategy matched to each
+prediction problem).** See
 [`docs/ARCHITECTURE_REPORT.md`](docs/ARCHITECTURE_REPORT.md) for the full
-architecture and [`docs/PHASE_2_REPORT.md`](docs/PHASE_2_REPORT.md) for what
-Phase 2 delivered. Model training, cross-validation, tuning and evaluation are
-Phase 3+.
+architecture, [`docs/PHASE_2_REPORT.md`](docs/PHASE_2_REPORT.md) /
+[`docs/PHASE_3_REPORT.md`](docs/PHASE_3_REPORT.md) for what's been delivered,
+[`docs/04_feature_dictionary.md`](docs/04_feature_dictionary.md) for every
+feature's definition, and
+[`docs/05_split_strategy.md`](docs/05_split_strategy.md) for the
+random-vs-grouped-vs-temporal split comparison. Model training,
+cross-validation, tuning and evaluation are Phase 4+.
 
 This is the predictive leg of a three-part motorsport analytics portfolio,
 alongside `motorsport-data-analytics-bi` (descriptive) and

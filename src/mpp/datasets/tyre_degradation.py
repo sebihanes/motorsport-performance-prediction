@@ -21,14 +21,20 @@ MIN_VALID_LAPS_PER_STINT = 3
 GROUP_COLUMNS = ["season", "round", "circuit_id"]
 STINT_KEY = ["season", "round", "driver", "stint"]
 IDENTITY_COLUMNS = ["driver", "team"]
-FEATURE_COLUMNS = [
+NUMERIC_FEATURE_COLUMNS = [
     "tyre_age_delta",
     "tyre_age_delta_sq",
-    "compound",
+    "laps_into_stint",
     "race_fraction",
     "air_temp",
     "track_temp",
+    "driver_prior_relative_pace_s",
+    "driver_prior_relative_pace_std_s",
+    "team_prior_relative_pace_s",
+    "driver_circuit_prior_relative_pace_s",
 ]
+NOMINAL_FEATURE_COLUMNS = ["compound"]
+FEATURE_COLUMNS = NUMERIC_FEATURE_COLUMNS + NOMINAL_FEATURE_COLUMNS
 TARGET_COLUMN = "lap_time_delta_s"
 
 
