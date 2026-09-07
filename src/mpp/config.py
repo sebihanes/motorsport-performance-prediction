@@ -23,6 +23,7 @@ class PipelinePaths:
     features_dir: Path
     model_ready_dir: Path
     quality_dir: Path
+    models_dir: Path
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,7 @@ def load_config(config_path: Path | None = None, repo_root: Path | None = None) 
         features_dir=_resolve(repo_root, paths_raw["features_dir"]),
         model_ready_dir=_resolve(repo_root, paths_raw["model_ready_dir"]),
         quality_dir=_resolve(repo_root, paths_raw["quality_dir"]),
+        models_dir=_resolve(repo_root, paths_raw["models_dir"]),
     )
     validation = ValidationSettings(
         lap_time_min_s=float(validation_raw["lap_time_min_s"]),

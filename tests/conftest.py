@@ -56,6 +56,7 @@ def test_config(tmp_path: Path) -> PipelineConfig:
         features_dir=tmp_path / "features",
         model_ready_dir=tmp_path / "model_ready",
         quality_dir=tmp_path / "quality",
+        models_dir=tmp_path / "models",
     )
     return PipelineConfig(
         season=2023,

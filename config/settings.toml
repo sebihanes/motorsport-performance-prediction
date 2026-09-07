@@ -13,6 +13,7 @@ processed_dir = "data/processed"
 features_dir = "data/features"
 model_ready_dir = "data/model_ready"
 quality_dir = "data/quality"
+models_dir = "data/models"
 
 [validation]
 # Plausible bounds for a green-flag F1 race lap. Outside this range a lap is

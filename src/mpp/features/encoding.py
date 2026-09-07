@@ -16,23 +16,42 @@ Numeric features are passed through unscaled by default: the primary
 candidate models (Random Forest, HistGradientBoosting - architecture SS11)
 are scale-invariant. Set scale_numeric=True to standardize them for a linear
 model (Ridge/Lasso) instead.
+
+impute_numeric=True (Phase 4, mpp.models.regressors) inserts a median
+SimpleImputer ahead of any scaling: Ridge/RandomForest/GradientBoosting
+cannot consume NaN directly, and several real numeric features are
+legitimately null (e.g. driver_prior_relative_pace_s at round 1, where no
+history exists yet). Left False by default - and for
+HistGradientBoostingRegressor specifically - since that model's native
+missing-value handling is the reason it is a candidate at all; imputing
+ahead of it would discard that advantage.
 """
 
 from __future__ import annotations
 
 from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 
 def build_feature_pipeline(
-    numeric_columns: list[str], nominal_columns: list[str], scale_numeric: bool = False
+    numeric_columns: list[str],
+    nominal_columns: list[str],
+    scale_numeric: bool = False,
+    impute_numeric: bool = False,
 ) -> ColumnTransformer:
     """A ColumnTransformer mapping (numeric_columns, nominal_columns) -> a model
     matrix. Any column not listed in either argument is dropped, not passed
     through silently - callers should pass every feature column they intend
     to use.
     """
-    numeric_transform = StandardScaler() if scale_numeric else "passthrough"
+    numeric_steps = []
+    if impute_numeric:
+        numeric_steps.append(("impute", SimpleImputer(strategy="median")))
+    if scale_numeric:
+        numeric_steps.append(("scale", StandardScaler()))
+    numeric_transform = Pipeline(numeric_steps) if numeric_steps else "passthrough"
     return ColumnTransformer(
         transformers=[
             ("numeric", numeric_transform, list(numeric_columns)),
