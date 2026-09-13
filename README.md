@@ -12,30 +12,35 @@ RAW DATA → DATA VALIDATION → DATA CLEANING → FEATURE ENGINEERING
 → ENGINEERING INTERPRETATION
 ```
 
-**Status: Phase 4 complete — lap-time baselines (mean/median/per-circuit-median),
-five candidate ML models (Linear Regression, Ridge, Random Forest, Gradient
-Boosting, HistGradientBoostingRegressor), nested leave-one-race-out
-cross-validation and hyperparameter tuning, a structured model comparison,
-and serialization of the winning pipeline (Ridge).** See
-[`docs/ARCHITECTURE_REPORT.md`](docs/ARCHITECTURE_REPORT.md) for the full
-architecture, [`docs/PHASE_2_REPORT.md`](docs/PHASE_2_REPORT.md) /
+**Status: Phase 5 complete — lap time (Phase 4), tyre degradation, race pace,
+and pit stop duration all trained and evaluated against the real 2023
+rounds 1-6 data**, each with baselines, candidate ML models, a validation
+strategy matched to that problem's own correlation structure (race-grouped
+or chronological), a structured model comparison, and an error-analysis
+breakdown by driver/team/circuit/compound/tyre-age where the dataset
+supports it. See [`docs/ARCHITECTURE_REPORT.md`](docs/ARCHITECTURE_REPORT.md)
+for the full architecture, [`docs/PHASE_2_REPORT.md`](docs/PHASE_2_REPORT.md) /
 [`docs/PHASE_3_REPORT.md`](docs/PHASE_3_REPORT.md) /
-[`docs/PHASE_4_REPORT.md`](docs/PHASE_4_REPORT.md) for what's been delivered
+[`docs/PHASE_4_REPORT.md`](docs/PHASE_4_REPORT.md) /
+[`docs/PHASE_5_REPORT.md`](docs/PHASE_5_REPORT.md) for what's been delivered
 in each phase, [`docs/04_feature_dictionary.md`](docs/04_feature_dictionary.md)
 for every feature's definition, and
 [`docs/05_split_strategy.md`](docs/05_split_strategy.md) for the
 random-vs-grouped-vs-temporal split comparison.
 
-**Headline result (see `docs/PHASE_4_REPORT.md` for the full, honest
-discussion): Ridge is the only candidate that beats the strong baseline,
-with a leave-one-race-out MAE of ~5.95s versus the baseline's ~8.96s — a
-real improvement, but nowhere near "race-ready."** The current 6-round 2023
-scope has zero repeated circuits, so no model or baseline has any
-circuit-specific history to draw on for a held-out race; tree-based models
-in particular cannot extrapolate past the training races' weather range and
-underperform even the naive baseline as a result. This is a data-scope
-limitation, not an implementation bug, and is expected to improve once the
-season scope widens.
+**Headline result: none of the four problems beats its strong baseline by a
+margin this project calls "race-ready."** Lap time's Ridge model is the
+closest (~5.95s MAE vs. a ~8.96s baseline - see `docs/PHASE_4_REPORT.md`).
+Tyre degradation, race pace, and pit stop duration (`docs/PHASE_5_REPORT.md`)
+are each limited by a different, concretely identified cause: tyre
+degradation's target is confounded with fuel burn and still-unfiltered
+safety-car laps; race pace's dataset carries no circuit-identity feature at
+all, so predicting an absolute, circuit-dominated pace from weather alone
+generalizes badly; and pit-stop duration is dominated by one race's
+red-flag stoppages being recorded as pit-stop time. The common thread across
+every problem is the current 6-round, zero-repeated-circuit scope - expected
+to improve, likely substantially, once the season scope widens
+(config-only change, `config/settings.toml`).
 
 This is the predictive leg of a three-part motorsport analytics portfolio,
 alongside `motorsport-data-analytics-bi` (descriptive) and
@@ -45,8 +50,11 @@ alongside `motorsport-data-analytics-bi` (descriptive) and
 
 ```bash
 pip install -e ".[dev]"
-python -m mpp.pipeline               # ingest -> validate -> clean -> feature dataset -> model datasets
-python -m mpp.models.train_lap_time  # baselines -> candidate models -> nested CV/tuning -> comparison -> serialize
+python -m mpp.pipeline                      # ingest -> validate -> clean -> feature dataset -> model datasets
+python -m mpp.models.train_lap_time         # lap time: baselines -> 5 candidates -> nested CV/tuning -> serialize
+python -m mpp.models.train_tyre_degradation # tyre degradation: baselines -> linear/Ridge/RF -> nested CV -> serialize
+python -m mpp.models.train_race_pace        # race pace: baselines -> linear/Ridge/RF -> chronological CV -> serialize
+python -m mpp.models.train_pit_stop         # pit stop: baselines -> linear/Ridge/RF -> nested CV -> serialize
 pytest
 ```
 
@@ -62,8 +70,10 @@ data/features/     laps_features.parquet - the full per-lap feature table
 data/model_ready/  lap_time.parquet, tyre_degradation.parquet, race_pace.parquet,
                     pit_stop.parquet - see docs/03_dataset_definitions.md
 data/quality/      validation_report.{json,md}, cleaning_log.json, dataset_build_summary.json,
-                    model_comparison_lap_time.{json,md}
-data/models/       lap_time_model.joblib, lap_time_model_metadata.json - see docs/PHASE_4_REPORT.md
+                    model_comparison_{lap_time,tyre_degradation,race_pace,pit_stop}.{json,md}
+data/models/       {lap_time,tyre_degradation,race_pace,pit_stop}_model.joblib + _metadata.json,
+                    only for a problem whose best candidate beat its strong baseline - see
+                    docs/PHASE_4_REPORT.md / docs/PHASE_5_REPORT.md
 ```
 
 ## Data

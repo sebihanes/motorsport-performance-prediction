@@ -41,11 +41,29 @@ def time_series_splits(dataset: pd.DataFrame, n_splits: int = 3):
     by `round`. Each successive fold's test set is a later slice of rounds
     than every round in that fold's training set - never the reverse.
 
+    TimeSeriesSplit is applied to the *distinct rounds*, not to raw row
+    positions: race_pace (and any other dataset with more than one row per
+    round, e.g. one row per driver) has several rows sharing the same round,
+    and splitting by row position alone can cut a fold boundary through the
+    middle of a round's rows - some of that round's drivers in train, others
+    in test, leaking the very round the split is supposed to hold out. Every
+    row belonging to a round is always assigned to the same side of a fold.
+
+    n_splits is capped at (number of distinct rounds - 1), since
+    TimeSeriesSplit cannot produce more non-empty forward-chaining folds than
+    that over the round axis.
+
     dataset need not be pre-sorted: this sorts internally and maps back to
     positional indices against dataset's own original row order (use with
     .iloc, exactly like mpp.splits.group_split's functions).
     """
-    order = np.argsort(dataset["round"].to_numpy(), kind="stable")
+    rounds_sorted = np.array(sorted(dataset["round"].unique()))
+    round_values = dataset["round"].to_numpy()
+    positions_by_round = {r: np.flatnonzero(round_values == r) for r in rounds_sorted}
+
+    n_splits = min(n_splits, len(rounds_sorted) - 1)
     splitter = TimeSeriesSplit(n_splits=n_splits)
-    for train_pos, test_pos in splitter.split(np.zeros(len(order))):
-        yield order[train_pos], order[test_pos]
+    for train_round_pos, test_round_pos in splitter.split(np.zeros(len(rounds_sorted))):
+        train_idx = np.concatenate([positions_by_round[r] for r in rounds_sorted[train_round_pos]])
+        test_idx = np.concatenate([positions_by_round[r] for r in rounds_sorted[test_round_pos]])
+        yield np.sort(train_idx), np.sort(test_idx)
