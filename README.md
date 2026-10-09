@@ -12,9 +12,10 @@ RAW DATA → DATA VALIDATION → DATA CLEANING → FEATURE ENGINEERING
 → ENGINEERING INTERPRETATION
 ```
 
-**Status: Phase 5 complete — lap time (Phase 4), tyre degradation, race pace,
+**Status: Phase 6 complete — lap time (Phase 4), tyre degradation, race pace,
 and pit stop duration all trained and evaluated against the real 2023
-rounds 1-6 data**, each with baselines, candidate ML models, a validation
+rounds 1-6 data, and the lap-time model explained and error-analysed
+(Phase 6)**, each with baselines, candidate ML models, a validation
 strategy matched to that problem's own correlation structure (race-grouped
 or chronological), a structured model comparison, and an error-analysis
 breakdown by driver/team/circuit/compound/tyre-age where the dataset
@@ -22,7 +23,8 @@ supports it. See [`docs/ARCHITECTURE_REPORT.md`](docs/ARCHITECTURE_REPORT.md)
 for the full architecture, [`docs/PHASE_2_REPORT.md`](docs/PHASE_2_REPORT.md) /
 [`docs/PHASE_3_REPORT.md`](docs/PHASE_3_REPORT.md) /
 [`docs/PHASE_4_REPORT.md`](docs/PHASE_4_REPORT.md) /
-[`docs/PHASE_5_REPORT.md`](docs/PHASE_5_REPORT.md) for what's been delivered
+[`docs/PHASE_5_REPORT.md`](docs/PHASE_5_REPORT.md) /
+[`docs/PHASE_6_REPORT.md`](docs/PHASE_6_REPORT.md) for what's been delivered
 in each phase, [`docs/04_feature_dictionary.md`](docs/04_feature_dictionary.md)
 for every feature's definition, and
 [`docs/05_split_strategy.md`](docs/05_split_strategy.md) for the
@@ -42,6 +44,13 @@ every problem is the current 6-round, zero-repeated-circuit scope - expected
 to improve, likely substantially, once the season scope widens
 (config-only change, `config/settings.toml`).
 
+**Why the lap-time model errs (Phase 6, `docs/PHASE_6_REPORT.md`):** about
+half its squared error is a constant per-race offset (it under-reacts to a
+new circuit's pace level and pulls predictions toward the training mean),
+and safety-car/VSC laps - ~8% of laps, ~19% of absolute error - are
+unflagged in its features. On green-flag laps with a clean stint history
+and the race offset removed, the typical error is ~1.3s.
+
 This is the predictive leg of a three-part motorsport analytics portfolio,
 alongside `motorsport-data-analytics-bi` (descriptive) and
 `motorsport-statistical-analysis` (inferential).
@@ -55,6 +64,7 @@ python -m mpp.models.train_lap_time         # lap time: baselines -> 5 candidate
 python -m mpp.models.train_tyre_degradation # tyre degradation: baselines -> linear/Ridge/RF -> nested CV -> serialize
 python -m mpp.models.train_race_pace        # race pace: baselines -> linear/Ridge/RF -> chronological CV -> serialize
 python -m mpp.models.train_pit_stop         # pit stop: baselines -> linear/Ridge/RF -> nested CV -> serialize
+python -m mpp.evaluation.analyze_lap_time   # lap time: permutation importance, PDP, residual/failure analysis
 pytest
 ```
 
@@ -70,11 +80,15 @@ data/features/     laps_features.parquet - the full per-lap feature table
 data/model_ready/  lap_time.parquet, tyre_degradation.parquet, race_pace.parquet,
                     pit_stop.parquet - see docs/03_dataset_definitions.md
 data/quality/      validation_report.{json,md}, cleaning_log.json, dataset_build_summary.json,
-                    model_comparison_{lap_time,tyre_degradation,race_pace,pit_stop}.{json,md}
+                    model_comparison_{lap_time,tyre_degradation,race_pace,pit_stop}.{json,md},
+                    interpretability_lap_time.{json,md}
 data/models/       {lap_time,tyre_degradation,race_pace,pit_stop}_model.joblib + _metadata.json,
                     only for a problem whose best candidate beat its strong baseline - see
                     docs/PHASE_4_REPORT.md / docs/PHASE_5_REPORT.md
 ```
+
+Phase 6 figures are written to `docs/figures/phase6/` (committed, since the
+report embeds them).
 
 ## Data
 
