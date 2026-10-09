@@ -208,3 +208,14 @@ def test_write_outputs(outcome, tmp_path):
     assert payload["model_name"] == "ridge"
     assert "unobservable_causes_note" in payload
     assert (tmp_path / "quality" / "interpretability_lap_time.md").read_text(encoding="utf-8").startswith("# ")
+
+
+def test_analyze_scores_stint_pace_persistence_on_the_same_rows(outcome):
+    frame = outcome["frame"]
+    assert frame["persistence_prediction_s"].notna().all()
+    assert outcome["persistence_mean_fold_mae"] == pytest.approx(
+        np.mean([m["persistence_mae"] for m in outcome["per_fold_metrics"]])
+    )
+    table = outcome["model_vs_persistence"]
+    assert table["n"].sum() == len(frame)
+    assert np.allclose(table["model_minus_persistence_s"], table["model_mae"] - table["persistence_mae"])

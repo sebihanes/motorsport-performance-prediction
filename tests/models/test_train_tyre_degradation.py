@@ -16,7 +16,15 @@ from mpp.config import CleaningSettings, PipelineConfig, PipelinePaths, Validati
 from mpp.models.train_tyre_degradation import run_training
 
 N_SYNTHETIC_RACES = 6
-EXPECTED_MODEL_NAMES = {"mean_baseline", "median_baseline", "strong_baseline", "linear_regression", "ridge", "random_forest"}
+EXPECTED_MODEL_NAMES = {
+    "mean_baseline",
+    "median_baseline",
+    "strong_baseline",
+    "per_compound_linear_trend_baseline",
+    "linear_regression",
+    "ridge",
+    "random_forest",
+}
 
 
 def _synthetic_tyre_degradation_dataset(n_races: int = N_SYNTHETIC_RACES, laps_per_stint: int = 12, seed: int = 0) -> pd.DataFrame:
@@ -29,6 +37,7 @@ def _synthetic_tyre_degradation_dataset(n_races: int = N_SYNTHETIC_RACES, laps_p
             compound = ["SOFT", "MEDIUM", "HARD"][driver_idx % 3]
             degradation_rate = {"SOFT": 0.08, "MEDIUM": 0.05, "HARD": 0.02}[compound]
             for lap in range(laps_per_stint):
+                track_temp = 35.0 + 3.0 * rng.normal()
                 rows.append(
                     {
                         "season": 2023,
@@ -41,13 +50,13 @@ def _synthetic_tyre_degradation_dataset(n_races: int = N_SYNTHETIC_RACES, laps_p
                         "laps_into_stint": lap,
                         "race_fraction": lap / laps_per_stint,
                         "air_temp": 25.0 + rng.normal(),
-                        "track_temp": 35.0 + rng.normal(),
+                        "track_temp": track_temp,
                         "driver_prior_relative_pace_s": np.nan if round_ == 1 else rng.normal(),
                         "driver_prior_relative_pace_std_s": np.nan if round_ == 1 else abs(rng.normal()),
                         "team_prior_relative_pace_s": np.nan if round_ == 1 else rng.normal(),
                         "driver_circuit_prior_relative_pace_s": np.nan,
                         "compound": compound,
-                        "lap_time_delta_s": degradation_rate * lap + rng.normal(scale=0.05),
+                        "lap_time_delta_s": degradation_rate * lap + 0.3 * (track_temp - 35.0) + rng.normal(scale=0.05),
                     }
                 )
     return pd.DataFrame(rows)
@@ -104,8 +113,9 @@ def test_run_training_uses_leave_one_race_out_outer_folds(small_search_grids, sy
 
 
 def test_run_training_best_model_beats_baseline_on_this_clean_synthetic_signal(small_search_grids, synthetic_config):
-    # The synthetic target is a near-deterministic function of compound + tyre age -
-    # a real learned model should comfortably beat the strong (per-compound) baseline here.
+    # The synthetic target is compound x tyre age plus a track-temperature effect - the
+    # per-compound linear-trend baseline captures the first part exactly but cannot see
+    # the second, so a learned model should beat the strongest baseline here.
     config, _dataset = synthetic_config
     outcome = run_training(config, n_jobs=1)
     assert outcome["beats_strong_baseline"]
@@ -139,3 +149,12 @@ def test_run_training_serializable_final_pipeline_predicts(small_search_grids, s
     preds = outcome["final_pipeline"].predict(dataset[MODEL_NUMERIC_COLUMNS + MODEL_NOMINAL_COLUMNS].head(5))
     assert len(preds) == 5
     assert np.isfinite(preds).all()
+
+
+def test_strong_baseline_is_the_best_of_the_strong_baselines(small_search_grids, synthetic_config):
+    config, _dataset = synthetic_config
+    outcome = run_training(config, n_jobs=1)
+    by_name = {r["model"]: r["mae_mean"] for r in outcome["results"]}
+    expected = min(by_name["strong_baseline"], by_name["per_compound_linear_trend_baseline"])
+    assert outcome["metadata"]["strong_baseline_mae_mean"] == pytest.approx(expected)
+    assert outcome["metadata"]["strong_baseline"] in {"strong_baseline", "per_compound_linear_trend_baseline"}

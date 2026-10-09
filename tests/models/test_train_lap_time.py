@@ -25,6 +25,7 @@ EXPECTED_MODEL_NAMES = {
     "mean_baseline",
     "median_baseline",
     "per_circuit_median_baseline",
+    "stint_pace_persistence_baseline",
     "linear_regression",
     "ridge",
     "random_forest",
@@ -177,3 +178,19 @@ def test_run_training_serializable_final_pipeline_predicts_on_full_feature_set(
     preds = outcome["final_pipeline"].predict(dataset[MODEL_FEATURE_COLUMNS].head(5))
     assert len(preds) == 5
     assert np.isfinite(preds).all()
+
+
+def test_run_training_gates_on_the_strongest_baseline(small_search_grids, synthetic_config):
+    # Synthetic stint_prior_mean_lap_time_s equals each race's base pace and laps are
+    # base pace + 0.3s noise, so pace persistence is near-perfect and must be the bar.
+    config, _dataset = synthetic_config
+    outcome = run_training(config, n_jobs=1)
+    by_name = {r["model"]: r["mae_mean"] for r in outcome["results"]}
+    expected = min(by_name["per_circuit_median_baseline"], by_name["stint_pace_persistence_baseline"])
+    metadata = outcome["metadata"]
+    assert metadata["strong_baseline_mae_mean"] == pytest.approx(expected)
+    assert metadata["best_candidate_model"] == outcome["best_row"]["model"]
+    assert outcome["beats_strong_baseline"] == (outcome["best_row"]["mae_mean"] < expected)
+    if not outcome["beats_strong_baseline"]:
+        assert outcome["final_pipeline"] is None
+        assert metadata["best_model"] is None

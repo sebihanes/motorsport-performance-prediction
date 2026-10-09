@@ -5,8 +5,17 @@
 Phases 4-5 answered "how accurate is each model?". This phase answers the
 next question: **why does the lap-time model make the predictions it makes,
 and where and why does it fail?** The lap-time model is the subject because
-it is the project's anchor problem and the only model that beats its
-strong baseline by a clear margin (`docs/PHASE_4_REPORT.md`).
+it is the project's anchor problem (`docs/PHASE_4_REPORT.md`).
+
+> **Final-audit correction (docs/FINAL_AUDIT.md).** When this phase was
+> written, Ridge was believed to beat its strong baseline. The final audit
+> added the baseline a race engineer would use first - **stint pace
+> persistence** (predict the stint's own mean lap time so far) - and it
+> scores **3.669s MAE** against Ridge's 5.953s, so **no lap-time model
+> beats the strongest baseline** and nothing is serialized. Everything
+> below remains a correct description of *what Ridge does and why it
+> errs*; read "best model" as "best ML candidate". Section 2a explains,
+> from this analysis, exactly why Ridge loses to persistence.
 The tooling built here is generic, so the Phase 5 models can be analysed
 the same way later.
 
@@ -62,7 +71,9 @@ Positive means the model predicted a lap that was too slow
 
 ## 1. Best model
 
-**Ridge regression (`alpha=100`)** on 20 inputs: 18 numeric features plus
+**Best ML candidate: Ridge regression (`alpha=100`)** - it does not beat
+the stint-pace-persistence baseline (section 2a), so it is analysed, not
+deployed. Model: on 20 inputs: 18 numeric features plus
 one-hot `compound` and `session_type`. Numeric features are median-imputed
 and standardized inside the pipeline. Circuit, driver and team identity
 are **not** model inputs.
@@ -103,6 +114,29 @@ Error depends heavily on track conditions:
 
 The last row approximates the model's skill at the task it is actually
 equipped for: ranking laps within a race under racing conditions.
+
+### 2a. Against stint pace persistence (added in the final audit)
+
+| held-out race | Ridge MAE (s) | persistence MAE (s) |
+|---|---|---|
+| Bahrain | 2.94 | **1.71** |
+| Jeddah | **4.29** | 5.15 |
+| Albert Park | **5.10** | 6.04 |
+| Baku | 14.51 | **4.67** |
+| Miami | **1.07** | 1.09 |
+| Monaco | 7.81 | **3.35** |
+| **mean of folds** | 5.95 | **3.67** |
+
+On green-flag laps later in a stint (5,465 laps), persistence is 2.76s
+MAE and Ridge 5.12s. The reason follows directly from section 5 below.
+Ridge moves only 0.46-0.77s per second of stint pace, i.e. it shrinks
+toward the training races' pace. Persistence has an implicit slope of
+exactly 1. That shrinkage pays off only where the stint history is
+corrupted by neutralisations (Jeddah, Albert Park). It costs about 10s at
+Baku and 4.5s at Monaco, whose pace sits far from the other circuits'.
+With no circuit repeats, nothing a cross-circuit model learns about pace
+*level* can transfer, so the best available predictor of a lap's pace is
+that same stint's pace.
 
 ## 3. Most important features
 
@@ -447,6 +481,7 @@ Highest-value fixes, ordered by the error each addresses:
 
 | fix | addresses | evidence |
 |---|---|---|
+| Model the *deviation from stint pace* rather than absolute lap time, and gate on persistence | Ridge loses to persistence (5.95 vs 3.67s); a quick audit check of Ridge on the persistence residual reached 4.24s, still not enough, so this needs the fixes below too | section 2a, docs/FINAL_AUDIT.md |
 | Widen season scope so circuits repeat; add circuit identity / per-circuit prior pace | 50.9% of MSE (race offset); 0.46-0.77 slope shortfall | sections 4-5 |
 | Add `track_status` (or SC/VSC flags) as a feature, or exclude neutralised laps from the target | 19.4% of absolute error on 8.1% of laps | section 5 |
 | Compute `stint_prior_mean_lap_time_s` over green-flag laps only | pattern C (Jeddah post-SC laps +30-35s) | section 6 |

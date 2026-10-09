@@ -1,5 +1,16 @@
 # Phase 5 Report - Tyre Degradation & Additional Prediction
 
+> **Final-audit correction (docs/FINAL_AUDIT.md).** Architecture SS10
+> specifies the tyre-degradation strong baseline as a **per-compound linear
+> fit of delta vs. tyre age**; this phase implemented a per-compound median
+> instead. The specified baseline is now implemented
+> (`mpp.models.baselines.PerGroupLinearTrendRegressor`) and scores
+> **7.643s MAE**, beating the Random Forest's 7.767s. The tyre-degradation
+> model is therefore no longer serialized either. The conclusion of this
+> report ("none of the three beats its strong baseline by a margin worth
+> calling a win") stands, and is now strictly true rather than a
+> within-noise numerical edge.
+
 **Status: complete.** All three prediction problems `docs/PHASE_4_REPORT.md`
 deferred - tyre degradation, race pace, and pit stop - are trained and
 evaluated against the real 2023 rounds 1-6 data, each reusing Phase 4's

@@ -231,12 +231,14 @@ learned model must beat the **strongest** reasonable baseline, not a straw one:
 
 | Problem | Weak baseline | Strong baseline (the one to beat) |
 |---|---|---|
-| Lap time | global mean lap time | per-circuit median lap time |
+| Lap time | global mean lap time | per-circuit median lap time; **stint pace persistence** (the stint's own mean lap time so far) - added in the final audit, the stronger of the two in a zero-repeated-circuit scope |
 | Tyre degradation | zero-degradation assumption (`delta = 0`) | per-compound linear fit of delta vs. tyre age |
 | Race pace | global mean pace | driver's own rolling historical average pace |
 | Pit stop | global median pit stop time | per-team median pit stop time |
 
-A model that only beats the weak baseline is not reported as a success.
+A model that only beats the weak baseline is not reported as a success. Where a
+problem has more than one strong baseline, the bar is the best of them
+(implemented in `train_lap_time` and `train_common`; see `docs/FINAL_AUDIT.md`).
 
 ## 11. Candidate ML models
 

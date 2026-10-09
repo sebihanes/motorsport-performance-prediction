@@ -31,8 +31,11 @@ functions":
    races, then fitting on the full dataset - a real deployment should not
    permanently withhold any race's data once evaluation is complete.
 5. The best model (lowest mean MAE across outer folds among the ML
-   candidates) is only serialized if it beats the strong per-circuit-median
-   baseline (architecture SS10).
+   candidates) is only serialized if it beats the **strongest** baseline
+   (architecture SS10) - the better of the per-circuit median and stint
+   pace persistence. When none does, nothing is serialized (any stale
+   artifact from an earlier run is removed) and the metadata records the
+   best candidate and the margin it missed by.
 
 An MAE/RMSE/R^2 number on its own is not a "race-ready" claim - see the
 caveat written into the generated comparison report, and
@@ -57,7 +60,12 @@ import sklearn
 
 from mpp.config import PipelineConfig, load_config
 from mpp.evaluation.metrics import aggregate_fold_metrics, interpret_mae, regression_metrics
-from mpp.models.baselines import PerGroupMedianRegressor, mean_baseline, median_baseline
+from mpp.models.baselines import (
+    PerGroupMedianRegressor,
+    StintPacePersistenceRegressor,
+    mean_baseline,
+    median_baseline,
+)
 from mpp.models.regressors import (
     MODEL_FEATURE_COLUMNS,
     gradient_boosting_pipeline,
@@ -105,6 +113,11 @@ TRAINING_NOTES: dict[str, dict[str, str]] = {
         "weaknesses": "Blind to tyre age, compound, weather, and driver/team form - explains none of the within-circuit variation. In the current 6-round scope, every circuit appears exactly once, so this baseline is mathematically identical to the global median baseline for every leave-one-race-out fold - it will only start to differ once a circuit repeats within the ingested scope.",
         "training_considerations": "No fitting cost beyond a group-by; falls back to the global median for a circuit unseen in training (always true here).",
     },
+    "stint_pace_persistence_baseline": {
+        "strengths": "What a race engineer would predict first: 'same pace as this stint so far'. Zero learned parameters, uses only information the ML models also receive, and slope 1 on the stint's own pace - so it is never pulled toward another circuit's pace level.",
+        "weaknesses": "Blind to tyre wear and fuel burn within the stint and to neutralisations (a safety-car lap inflates the running mean for the rest of the stint); undefined on a stint's first clean lap, where it falls back to the training median of other circuits.",
+        "training_considerations": "No fitting cost beyond the fallback median. Added in the final audit (docs/FINAL_AUDIT.md) as the strongest reasonable baseline for this next-lap problem.",
+    },
     "ridge": {
         "strengths": "Regularization tames the collinearity from one-hot circuit/compound dummies while keeping coefficients directly inspectable.",
         "weaknesses": "Same linear-interaction ceiling and extrapolation risk as plain linear regression.",
@@ -131,7 +144,11 @@ BASELINE_BUILDERS = {
     "mean_baseline": mean_baseline,
     "median_baseline": median_baseline,
     "per_circuit_median_baseline": PerGroupMedianRegressor,
+    "stint_pace_persistence_baseline": StintPacePersistenceRegressor,
 }
+# Baselines that count as "strong" (architecture SS10): the bar a learned
+# model must clear is the best of these, not a hand-picked one.
+STRONG_BASELINE_NAMES = ["per_circuit_median_baseline", "stint_pace_persistence_baseline"]
 
 _TUNING_SPECS = [
     ("ridge", tune_ridge, ridge_pipeline),
@@ -249,7 +266,9 @@ def run_training(config: PipelineConfig | None = None, n_jobs: int = 1) -> dict:
     )
     _finalize("linear_regression", "baseline", fold_metrics)
 
-    strong_baseline_mae = next(r["mae_mean"] for r in results if r["model"] == "per_circuit_median_baseline")
+    strong_rows = [r for r in results if r["model"] in STRONG_BASELINE_NAMES]
+    strongest_baseline = min(strong_rows, key=lambda r: r["mae_mean"])
+    strong_baseline_mae = strongest_baseline["mae_mean"]
 
     # --- Tuned ML models, nested CV ---
     for name, tuner_fn, build_fn in _TUNING_SPECS:
@@ -305,8 +324,12 @@ def run_training(config: PipelineConfig | None = None, n_jobs: int = 1) -> dict:
         }
         if beats_strong_baseline
         else None,
+        "strong_baseline": strongest_baseline["model"],
         "strong_baseline_mae_mean": strong_baseline_mae,
         "beats_strong_baseline": beats_strong_baseline,
+        "best_candidate_model": best_row["model"],
+        "best_candidate_mae_mean": best_row["mae_mean"],
+        "best_candidate_margin_vs_strong_baseline_s": best_row["mae_mean"] - strong_baseline_mae,
         "final_pipeline_note": (
             "Nested CV above (best_model_nested_cv_metrics) estimates the generalization "
             "performance of this model's tune-then-fit procedure across all races; the "
@@ -327,6 +350,7 @@ def run_training(config: PipelineConfig | None = None, n_jobs: int = 1) -> dict:
         "results": results,
         "best_row": best_row,
         "beats_strong_baseline": beats_strong_baseline,
+        "strong_baseline": strongest_baseline["model"],
         "final_pipeline": final_pipeline,
         "metadata": metadata,
         "all_races": all_races,
@@ -378,6 +402,11 @@ def _write_comparison_report(results: list[dict], out_dir: Path) -> None:
         lines.append(f"- Training considerations: {row['training_considerations']}")
         lines.append("")
     lines.append(
+        "**Bar to clear**: the best of the strong baselines (per-circuit median, stint pace persistence) - "
+        "architecture SS10. `data/models/lap_time_model_metadata.json` records whether any candidate cleared it."
+    )
+    lines.append("")
+    lines.append(
         "**Caveat**: these metrics describe leave-one-race-out predictive accuracy on 2023 "
         "rounds 1-6 only and are not, on their own, a claim that any model here is race-ready "
         "for live strategy use. See `docs/PHASE_4_REPORT.md` for the full discussion."
@@ -414,7 +443,19 @@ def main() -> int:
         print(f"Serialized best model to {model_path}")
         return 0
 
-    print("\nNo candidate model beat the per-circuit-median baseline - nothing serialized.")
+    models_dir = config.paths.models_dir
+    models_dir.mkdir(parents=True, exist_ok=True)
+    stale = models_dir / "lap_time_model.joblib"
+    if stale.exists():
+        stale.unlink()  # never leave an artifact that no longer clears the bar
+    with open(models_dir / "lap_time_model_metadata.json", "w", encoding="utf-8") as fh:
+        json.dump(outcome["metadata"], fh, indent=2)
+    best_row = outcome["best_row"]
+    print(
+        f"\nNo candidate model beat the strongest baseline ({outcome['strong_baseline']}, "
+        f"MAE {outcome['metadata']['strong_baseline_mae_mean']:.3f}s; best candidate {best_row['model']} "
+        f"{best_row['mae_mean']:.3f}s) - nothing serialized; metadata written."
+    )
     return 1
 
 

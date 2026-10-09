@@ -36,6 +36,7 @@ from mpp.config import PipelineConfig, load_config
 from mpp.datasets.tyre_degradation import NOMINAL_FEATURE_COLUMNS, NUMERIC_FEATURE_COLUMNS
 from mpp.evaluation.error_analysis import bucket_numeric, error_breakdown, largest_absolute_errors, to_markdown_table
 from mpp.evaluation.metrics import interpret_mae
+from mpp.models.baselines import PerGroupLinearTrendRegressor
 from mpp.models.train_common import (
     NestedTrainingSpec,
     fit_final_pipeline,
@@ -70,6 +71,11 @@ TRAINING_NOTES: dict[str, dict[str, str]] = {
         "strengths": "Captures the single largest compound-level difference in degradation behavior (soft vs. hard) with zero learned parameters - the bar this model must clear.",
         "weaknesses": "Blind to tyre age within a compound, circuit, and driver/team form - explains none of the within-compound degradation curve.",
         "training_considerations": "No fitting cost beyond a group-by; group column is `compound`, not `circuit_id` - the dominant source of degradation variance is which tyre, not which track.",
+    },
+    "per_compound_linear_trend_baseline": {
+        "strengths": "Architecture SS10's specified strong baseline: a straight line of delta vs. tyre age per compound - the classic 'degradation slope per compound' an engineer would draw first, with two parameters per compound.",
+        "weaknesses": "One slope per compound for every circuit, driver and fuel load; cannot see temperature, race progress or driver form.",
+        "training_considerations": "np.polyfit per compound on the training fold; compounds with fewer than 5 training rows fall back to the global median. Implemented in the final audit (docs/FINAL_AUDIT.md) - it was specified in SS10 but missing until then.",
     },
     "linear_regression": {
         "strengths": "Interpretable coefficients - the tyre_age_delta coefficient is directly readable as an average seconds-per-lap delta trend.",
@@ -110,6 +116,11 @@ def run_training(config: PipelineConfig | None = None, n_jobs: int = 1) -> dict:
         nominal_columns=MODEL_NOMINAL_COLUMNS,
         strong_baseline_group_column="compound",
         training_notes=TRAINING_NOTES,
+        extra_strong_baselines={
+            "per_compound_linear_trend_baseline": lambda: PerGroupLinearTrendRegressor(
+                group_column="compound", x_column="tyre_age_delta"
+            )
+        },
     )
     outcome = run_nested_race_grouped_training(dataset, spec, n_jobs=n_jobs)
 
@@ -150,8 +161,11 @@ def run_training(config: PipelineConfig | None = None, n_jobs: int = 1) -> dict:
         "n_outer_folds": outcome["n_outer_folds"],
         "best_model": outcome["best_row"]["model"] if outcome["beats_strong_baseline"] else None,
         "best_model_params": final_best_params,
+        "strong_baseline": outcome["strongest_baseline"],
         "strong_baseline_mae_mean": outcome["strong_baseline_mae_mean"],
         "beats_strong_baseline": outcome["beats_strong_baseline"],
+        "best_candidate_model": outcome["best_row"]["model"],
+        "best_candidate_mae_mean": outcome["best_row"]["mae_mean"],
         "known_limitations": [
             "Target conflates tyre wear with fuel burn within the stint - not separable without fuel-mass "
             "telemetry (architecture report SS18).",
@@ -257,7 +271,17 @@ def main() -> int:
         print(f"Serialized best model to {model_path}")
         return 0
 
-    print("\nNo candidate model beat the strong (per-compound-median) baseline - nothing serialized.")
+    models_dir = config.paths.models_dir
+    models_dir.mkdir(parents=True, exist_ok=True)
+    stale = models_dir / "tyre_degradation_model.joblib"
+    if stale.exists():
+        stale.unlink()  # never leave an artifact that no longer clears the bar
+    with open(models_dir / "tyre_degradation_model_metadata.json", "w", encoding="utf-8") as fh:
+        json.dump(outcome["metadata"], fh, indent=2)
+    print(
+        f"\nNo candidate model beat the strongest baseline ({outcome['metadata']['strong_baseline']}, "
+        f"MAE {outcome['metadata']['strong_baseline_mae_mean']:.3f}s) - nothing serialized; metadata written."
+    )
     return 1
 
 

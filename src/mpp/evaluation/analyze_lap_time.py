@@ -30,6 +30,9 @@ under ``docs/figures/phase6/``.
 
 Usage: ``python -m mpp.evaluation.analyze_lap_time``
 (requires ``python -m mpp.models.train_lap_time`` to have been run first).
+The best ML candidate is analysed whether or not it cleared the strongest
+baseline; when it did not, no serialized pipeline exists and the analysis
+uses only the per-fold models.
 """
 
 from __future__ import annotations
@@ -66,6 +69,7 @@ from mpp.evaluation.interpretability import (
     single_feature_groups,
 )
 from mpp.evaluation.metrics import regression_metrics
+from mpp.models.baselines import StintPacePersistenceRegressor
 from mpp.models.regressors import MODEL_FEATURE_COLUMNS, MODEL_NUMERIC_COLUMNS
 from mpp.models.train_lap_time import _BUILDER_BY_NAME, MAX_FOLDS_REQUESTED, TARGET_COLUMN, load_lap_time_dataset
 from mpp.splits.group_split import race_group_kfold, race_groups
@@ -354,11 +358,28 @@ def analyze(
     frame[PRED_COLUMN] = predictor.predict(dataset)
     frame = add_residuals(frame, TARGET_COLUMN, PRED_COLUMN)
 
+    # Stint pace persistence - the strongest baseline (docs/FINAL_AUDIT.md) -
+    # scored on exactly the same out-of-fold rows, its fallback median fit on
+    # each fold's training races only.
+    persistence = np.full(len(dataset), np.nan)
+    for fold in range(len(models)):
+        test_rows = fold_of_row == fold
+        baseline = StintPacePersistenceRegressor().fit(dataset.loc[~test_rows], y[~test_rows])
+        persistence[test_rows] = baseline.predict(dataset.loc[test_rows])
+    frame["persistence_prediction_s"] = persistence
+
     per_fold_metrics = []
     for fold, races in enumerate(held_out):
         rows = fold_of_row == fold
-        per_fold_metrics.append({"held_out": races, **regression_metrics(y[rows], frame.loc[rows, PRED_COLUMN])})
+        per_fold_metrics.append(
+            {
+                "held_out": races,
+                **regression_metrics(y[rows], frame.loc[rows, PRED_COLUMN]),
+                "persistence_mae": float(np.mean(np.abs(persistence[rows] - y[rows]))),
+            }
+        )
     mean_fold_mae = float(np.mean([m["mae"] for m in per_fold_metrics]))
+    persistence_mean_fold_mae = float(np.mean([m["persistence_mae"] for m in per_fold_metrics]))
 
     # --- Interpretability ---
     races = race_groups(dataset)
@@ -457,6 +478,17 @@ def analyze(
         else None,
     }
 
+    frame["_persistence_abs"] = np.abs(frame["persistence_prediction_s"] - frame[TARGET_COLUMN])
+    model_vs_persistence = (
+        frame.groupby(["lap_phase", "track_status_class"], observed=True)
+        .agg(n=(ABS_ERROR_COLUMN, "size"), model_mae=(ABS_ERROR_COLUMN, "mean"), persistence_mae=("_persistence_abs", "mean"))
+        .reset_index()
+    )
+    model_vs_persistence["model_minus_persistence_s"] = (
+        model_vs_persistence["model_mae"] - model_vs_persistence["persistence_mae"]
+    )
+    frame = frame.drop(columns=["_persistence_abs"])
+
     # --- Failure analysis ---
     race_bias = frame.groupby("race")[RESIDUAL_COLUMN].mean()
     frame["imputed_stint_prior_s"] = [imputed_value(models[f], "stint_prior_mean_lap_time_s") for f in fold_of_row]
@@ -500,6 +532,8 @@ def analyze(
         "held_out_per_fold": held_out,
         "per_fold_metrics": per_fold_metrics,
         "mean_fold_mae": mean_fold_mae,
+        "persistence_mean_fold_mae": persistence_mean_fold_mae,
+        "model_vs_persistence": model_vs_persistence,
         "pooled_metrics": regression_metrics(y, frame[PRED_COLUMN]),
         "frame": frame,
         "permutation_grouped": perm_grouped,
@@ -604,6 +638,8 @@ def _json_ready(outcome: dict) -> dict:
         "held_out_per_fold": outcome["held_out_per_fold"],
         "per_fold_metrics": outcome["per_fold_metrics"],
         "mean_fold_mae": outcome["mean_fold_mae"],
+        "persistence_mean_fold_mae": outcome["persistence_mean_fold_mae"],
+        "model_vs_persistence": records(outcome["model_vs_persistence"]),
         "pooled_metrics": outcome["pooled_metrics"],
         "permutation_grouped": records(outcome["permutation_grouped"]),
         "permutation_single": records(outcome["permutation_single"]),
@@ -639,7 +675,27 @@ def write_reports(outcome: dict, quality_dir: Path, phase4_mae: float | None) ->
         f"predictions. Mean per-fold MAE {outcome['mean_fold_mae']:.3f}s"
         + (f" (Phase 4 reported {phase4_mae:.3f}s)." if phase4_mae is not None else ".")
     )
-    lines += ["", "Residual = prediction - actual (+ = predicted too slow, - = predicted too fast).", ""]
+    lines += [
+        "",
+        f"Stint pace persistence baseline on the same rows: mean per-fold MAE "
+        f"{outcome['persistence_mean_fold_mae']:.3f}s.",
+        "",
+        "Residual = prediction - actual (+ = predicted too slow, - = predicted too fast).",
+        "",
+        "## Model vs. stint pace persistence, per fold",
+        "",
+    ]
+    lines += to_markdown_table(
+        pd.DataFrame(
+            [
+                {"held_out": ",".join(m["held_out"]), "model_mae": m["mae"], "persistence_mae": m["persistence_mae"]}
+                for m in outcome["per_fold_metrics"]
+            ]
+        ).round(3)
+    )
+    lines += ["", "## Model vs. stint pace persistence, by lap phase and track status", ""]
+    lines += to_markdown_table(rnd(outcome["model_vs_persistence"]))
+    lines += [""]
     lines += ["## Grouped permutation importance", ""] + to_markdown_table(rnd(outcome["permutation_grouped"]))
     lines += ["", "## Single-feature permutation importance", ""] + to_markdown_table(rnd(outcome["permutation_single"]))
     lines += ["", "## Model coefficients across folds", ""] + to_markdown_table(
@@ -688,16 +744,22 @@ def main() -> int:
         return 1
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
-    model_name = metadata["best_model"]
-    row = next(r for r in comparison if r["model"] == model_name)
+    # Analyse the best ML candidate whether or not it cleared the strongest
+    # baseline (and was therefore serialized) - explaining *why* it falls
+    # short is the point of the analysis.
+    candidates = [r for r in comparison if r["category"] == "model"]
+    row = min(candidates, key=lambda r: r["mae_mean"])
+    model_name = row["model"]
     fold_params = row["best_params_per_fold"]
 
     dataset = attach_context(load_lap_time_dataset(config), load_lap_context(config))
-    final_pipeline = joblib.load(config.paths.models_dir / "lap_time_model.joblib")
+    model_path = config.paths.models_dir / "lap_time_model.joblib"
+    final_pipeline = joblib.load(model_path) if metadata.get("best_model") == model_name and model_path.exists() else None
     outcome = analyze(dataset, model_name, fold_params, final_pipeline=final_pipeline)
 
     print(f"Model: {model_name}; reproduced mean per-fold MAE {outcome['mean_fold_mae']:.3f}s "
-          f"(Phase 4: {row['mae_mean']:.3f}s)")
+          f"(Phase 4: {row['mae_mean']:.3f}s); stint pace persistence {outcome['persistence_mean_fold_mae']:.3f}s; "
+          f"serialized: {final_pipeline is not None}")
     figures_dir = config.repo_root / "docs" / "figures" / "phase6"
     written = write_figures(outcome, figures_dir)
     write_reports(outcome, config.paths.quality_dir, row["mae_mean"])

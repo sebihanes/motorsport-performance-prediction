@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -57,6 +58,11 @@ class NestedTrainingSpec:
     nominal_columns: list[str]
     strong_baseline_group_column: str
     training_notes: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Additional strong baselines (name -> zero-argument estimator factory),
+    # fit on the model feature columns. The bar a learned model must clear is
+    # the best of `strong_baseline` and these (architecture SS10: the
+    # *strongest* reasonable baseline, not a hand-picked one).
+    extra_strong_baselines: dict[str, Callable[[], object]] = field(default_factory=dict)
 
     @property
     def feature_columns(self) -> list[str]:
@@ -196,13 +202,22 @@ def run_nested_race_grouped_training(dataset: pd.DataFrame, spec: NestedTraining
         _finalize(name, "baseline", fold_metrics)
         oof_predictions[name] = oof
 
+    for name, builder in spec.extra_strong_baselines.items():
+        fold_metrics, oof = _evaluate_baseline_nested(
+            builder, dataset, spec.feature_columns, spec.target_column, outer_folds
+        )
+        _finalize(name, "baseline", fold_metrics)
+        oof_predictions[name] = oof
+
     lin_fold_metrics, lin_oof = _evaluate_baseline_nested(
         lambda: _linear_pipeline(spec), dataset, spec.feature_columns, spec.target_column, outer_folds
     )
     _finalize("linear_regression", "baseline", lin_fold_metrics)
     oof_predictions["linear_regression"] = lin_oof
 
-    strong_baseline_mae = next(r["mae_mean"] for r in results if r["model"] == "strong_baseline")
+    strong_names = {"strong_baseline", *spec.extra_strong_baselines}
+    strongest_baseline = min((r for r in results if r["model"] in strong_names), key=lambda r: r["mae_mean"])
+    strong_baseline_mae = strongest_baseline["mae_mean"]
 
     ridge_metrics, ridge_params, ridge_oof = _evaluate_tuned_nested(
         _ridge_pipeline, RIDGE_PARAM_GRID, GridSearchCV, {}, dataset, spec, outer_folds, n_jobs
@@ -232,6 +247,7 @@ def run_nested_race_grouped_training(dataset: pd.DataFrame, spec: NestedTraining
         "best_row": best_row,
         "beats_strong_baseline": beats_strong_baseline,
         "strong_baseline_mae_mean": strong_baseline_mae,
+        "strongest_baseline": strongest_baseline["model"],
         "all_races": all_races,
         "outer_folds": outer_folds,
         "n_outer_folds": len(outer_folds),

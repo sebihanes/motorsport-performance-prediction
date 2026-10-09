@@ -30,9 +30,16 @@ for every feature's definition, and
 [`docs/05_split_strategy.md`](docs/05_split_strategy.md) for the
 random-vs-grouped-vs-temporal split comparison.
 
-**Headline result: none of the four problems beats its strong baseline by a
-margin this project calls "race-ready."** Lap time's Ridge model is the
-closest (~5.95s MAE vs. a ~8.96s baseline - see `docs/PHASE_4_REPORT.md`).
+**Headline result: no learned model beats the strongest reasonable baseline
+on any of the four problems in the current scope, so no model is
+serialized.** This is a deliberate, verified negative result, not a
+missing step. For lap time, Ridge (5.95s MAE) beats the per-circuit median
+(8.96s) but loses to **stint pace persistence**, the zero-parameter "same
+pace as this stint so far" predictor (3.67s), which the final audit added
+(`docs/FINAL_AUDIT.md`). The lap-time models are next-lap predictors: they
+use the current stint's already-completed laps, so they are not pre-race
+forecasts. The full scored audit, including what was fixed and what is
+still open, is in [`docs/FINAL_AUDIT.md`](docs/FINAL_AUDIT.md).
 Tyre degradation, race pace, and pit stop duration (`docs/PHASE_5_REPORT.md`)
 are each limited by a different, concretely identified cause: tyre
 degradation's target is confounded with fuel burn and still-unfiltered
@@ -60,13 +67,17 @@ alongside `motorsport-data-analytics-bi` (descriptive) and
 ```bash
 pip install -e ".[dev]"
 python -m mpp.pipeline                      # ingest -> validate -> clean -> feature dataset -> model datasets
-python -m mpp.models.train_lap_time         # lap time: baselines -> 5 candidates -> nested CV/tuning -> serialize
-python -m mpp.models.train_tyre_degradation # tyre degradation: baselines -> linear/Ridge/RF -> nested CV -> serialize
-python -m mpp.models.train_race_pace        # race pace: baselines -> linear/Ridge/RF -> chronological CV -> serialize
-python -m mpp.models.train_pit_stop         # pit stop: baselines -> linear/Ridge/RF -> nested CV -> serialize
+python -m mpp.models.train_lap_time         # lap time: baselines -> 5 candidates -> nested CV/tuning -> serialize if it beats the strongest baseline
+python -m mpp.models.train_tyre_degradation # tyre degradation: baselines -> linear/Ridge/RF -> nested CV -> (same gate)
+python -m mpp.models.train_race_pace        # race pace: baselines -> linear/Ridge/RF -> chronological CV -> (same gate)
+python -m mpp.models.train_pit_stop         # pit stop: baselines -> linear/Ridge/RF -> nested CV -> (same gate)
 python -m mpp.evaluation.analyze_lap_time   # lap time: permutation importance, PDP, residual/failure analysis
 pytest
 ```
+
+Each trainer exits with status 1 when no candidate beats its strongest
+baseline. In the current scope that is expected for all four, so run
+the trainers as separate commands rather than chaining them with `&&`.
 
 Outputs land in `data/` (git-ignored, fully regenerable from `config/settings.toml`'s
 season/round scope):
@@ -82,9 +93,10 @@ data/model_ready/  lap_time.parquet, tyre_degradation.parquet, race_pace.parquet
 data/quality/      validation_report.{json,md}, cleaning_log.json, dataset_build_summary.json,
                     model_comparison_{lap_time,tyre_degradation,race_pace,pit_stop}.{json,md},
                     interpretability_lap_time.{json,md}
-data/models/       {lap_time,tyre_degradation,race_pace,pit_stop}_model.joblib + _metadata.json,
-                    only for a problem whose best candidate beat its strong baseline - see
-                    docs/PHASE_4_REPORT.md / docs/PHASE_5_REPORT.md
+data/models/       <problem>_model.joblib only for a problem whose best candidate beats its
+                    strongest baseline (none does in the current scope); lap_time and
+                    tyre_degradation always write _metadata.json recording the best candidate
+                    and the bar it missed
 ```
 
 Phase 6 figures are written to `docs/figures/phase6/` (committed, since the
